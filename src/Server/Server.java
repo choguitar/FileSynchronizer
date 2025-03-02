@@ -1,22 +1,18 @@
 package Server;
 
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.*;
+import java.net.*;
 
 class Config {
-    public static final String CLIENT_DIR = "_client_dir";
-    public static final String SERVER_DIR = "_server_dir";
-    public static final int SERVER_PORT = 8000;
+    static final String CLIENT_DIR = "_client_dir";
+    static final String SERVER_DIR = "_server_dir";
+    static final int SERVER_PORT = 8000;
 }
 
 public class Server {
     public static void main(String[] args) {
         File serverDir = new File(Config.SERVER_DIR);
-        if (!serverDir.exists()) serverDir.mkdirs();
+        if (!serverDir.exists()) serverDir.mkdirs();	
         
         try (ServerSocket serverSocket = new ServerSocket(Config.SERVER_PORT)) {
             System.out.println("Server started...");
@@ -45,7 +41,7 @@ public class Server {
         File file = new File(Config.SERVER_DIR, fileName);
         
         try (FileOutputStream fos = new FileOutputStream(file)) {
-            byte[] buffer = new byte[4096];
+            byte[] buffer = new byte[1024];
             int bytesRead;
             while (fileSize > 0 && (bytesRead = dis.read(buffer, 0, (int)Math.min(buffer.length, fileSize))) != -1) {
                 fos.write(buffer, 0, bytesRead);
