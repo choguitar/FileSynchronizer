@@ -84,7 +84,7 @@ public class Server {
         	}
         }
         
-        System.out.println("Received: " + fileName);
+        System.out.println("Inserted: " + fileName);
     }
 
     private static void deleteFile(String fileName) {	// remove file
