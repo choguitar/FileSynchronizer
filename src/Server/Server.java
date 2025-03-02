@@ -14,44 +14,80 @@ public class Server {
         File serverDir = new File(Config.SERVER_DIR);
         if (!serverDir.exists()) serverDir.mkdirs();	
         
-        try (ServerSocket serverSocket = new ServerSocket(Config.SERVER_PORT)) {
+        ServerSocket serverSocket = null;
+        
+        try {
+        	serverSocket = new ServerSocket(Config.SERVER_PORT);
+        	
             System.out.println("Server started...");
+            
             while (true) {
-                try (Socket clientSocket = serverSocket.accept();
-                     DataInputStream dis = new DataInputStream(clientSocket.getInputStream())) {
+            	Socket clientSocket = null;
+            	DataInputStream dis = null;
+            	
+                try {
+                	clientSocket = serverSocket.accept();
+                    dis = new DataInputStream(clientSocket.getInputStream());
                     
                     String command = dis.readUTF();
                     if (command.equals("UPLOAD")) {
-                        receiveFile(dis);
+                    	insertFile(dis);
                     } else if (command.equals("DELETE")) {
                         deleteFile(dis.readUTF());
                     }
-                } catch (IOException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
+                } finally {
+                	try {
+                		if (clientSocket != null) clientSocket.close();
+                		if (dis != null) dis.close();
+                	} catch (Exception e) {
+                        e.printStackTrace();                		
+                	}
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+        	try {
+        		if (serverSocket != null) serverSocket.close();
+        	} catch (Exception e) {
+                e.printStackTrace();
+        	}
         }
     }
 
-    private static void receiveFile(DataInputStream dis) throws IOException {
+    private static void insertFile(DataInputStream dis) throws Exception { // update file
         String fileName = dis.readUTF();
         long fileSize = dis.readLong();
         File file = new File(Config.SERVER_DIR, fileName);
         
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while (fileSize > 0 && (bytesRead = dis.read(buffer, 0, (int)Math.min(buffer.length, fileSize))) != -1) {
-                fos.write(buffer, 0, bytesRead);
-                fileSize -= bytesRead;
+        FileOutputStream fos = null;
+        
+        try {
+        	fos = new FileOutputStream(file);
+        	
+            byte[] buf = new byte[1024];
+            int nRead;
+            
+            while (fileSize > 0 && (nRead = dis.read(buf, 0, (int)Math.min(buf.length, fileSize))) != -1) {
+                fos.write(buf, 0, nRead);
+                fileSize -= nRead;
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+        	try {
+        		if (fos != null) fos.close();
+        	} catch (Exception e) {
+                e.printStackTrace();        		
+        	}
         }
+        
         System.out.println("Received: " + fileName);
     }
 
-    private static void deleteFile(String fileName) {
+    private static void deleteFile(String fileName) {	// remove file
         File file = new File(Config.SERVER_DIR, fileName);
         if (file.exists() && file.delete()) {
             System.out.println("Deleted: " + fileName);

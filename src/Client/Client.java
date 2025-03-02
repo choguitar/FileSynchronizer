@@ -32,7 +32,7 @@ class FileObserver {
         	
             for (Path file : stream) {
                 if (Files.isRegularFile(file)) {
-                    fileHashes.put(file.toString(), getFileChecksum(file));
+                    fileHashes.put(file.toString(), checkHash(file));
                 }
             }
         } catch (Exception e) {
@@ -59,8 +59,8 @@ class FileObserver {
             while (true) {
                 WatchKey key = watchService.take();
                 for (WatchEvent<?> event : key.pollEvents()) {
-                    Path changedFile = dir.resolve((Path) event.context());
-                    handleFileChange(event.kind(), changedFile);
+                    Path filePath = dir.resolve((Path) event.context());
+                    handleFileChange(event.kind(), filePath);
                 }
                 key.reset();
             }
@@ -81,18 +81,18 @@ class FileObserver {
             fileHandler.deleteFile(file.getFileName().toString());
         } else {
             try {
-                String hash = getFileChecksum(file);
+                String hash = checkHash(file);
                 if (!hash.equals(fileHashes.get(file.toString()))) {
                     fileHashes.put(file.toString(), hash);
-                    fileHandler.sendFile(file.toFile());
+                    fileHandler.insertFile(file.toFile());
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private String getFileChecksum(Path file) throws IOException {	// check file using hash
+    private String checkHash(Path file) throws Exception {	// check file using hash
     	InputStream fis = null;
     	
         try {
@@ -104,9 +104,10 @@ class FileObserver {
             while ((nRead = fis.read(buf)) != -1) {
                 digest.update(buf, 0, nRead);
             }
+            
             return Base64.getEncoder().encodeToString(digest.digest());
         } catch (Exception e) {
-            throw new RuntimeException(e);
+        	throw new Exception(e);
         } finally {
         	try {
         		if (fis != null) fis.close();
@@ -124,7 +125,7 @@ class FileHandler {
         this.serverAddr = addr;
     }
 
-    public void sendFile(File file) {	// file UPLOAD
+    public void insertFile(File file) {	// file UPLOAD
     	Socket socket = null;
     	FileInputStream fis = null;
     	DataOutputStream dos = null;
@@ -140,6 +141,7 @@ class FileHandler {
             
             byte[] buffer = new byte[1024];
             int nRead;
+            
             while ((nRead = fis.read(buffer)) != -1) {
                 dos.write(buffer, 0, nRead);
             }
@@ -161,8 +163,8 @@ class FileHandler {
     	Socket socket = null;
     	
         try {
-        	dos = new DataOutputStream(socket.getOutputStream());
         	socket = new Socket(serverAddr, Config.SERVER_PORT);
+        	dos = new DataOutputStream(socket.getOutputStream());
             
             dos.writeUTF("DELETE");
             dos.writeUTF(fileName);
