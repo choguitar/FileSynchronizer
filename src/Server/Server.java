@@ -3,70 +3,46 @@ package Server;
 import java.io.*;
 import java.net.*;
 
-class Config {
-    static final String CLIENT_DIR = "_client_dir";
-    static final String SERVER_DIR = "_server_dir";
-    static final int SERVER_PORT = 8000;
-}
-
 public class Server {
+    private static final String SERVER_DIR = "_server_dir";
+    private static final int SERVER_PORT = 8000;
+    
     public static void main(String[] args) {
-        File serverDir = new File(Config.SERVER_DIR);
-        if (!serverDir.exists()) serverDir.mkdirs();	
+        File serverDir = new File(SERVER_DIR);
+        if (!serverDir.exists()) serverDir.mkdirs();
         
-        ServerSocket serverSocket = null;
-        
-        try {
-        	serverSocket = new ServerSocket(Config.SERVER_PORT);
-        	
+        try (ServerSocket serverSocket = new ServerSocket(SERVER_PORT)) {
             System.out.println("Server started...");
             
             while (true) {
-            	Socket clientSocket = null;
-            	DataInputStream dis = null;
-            	
-                try {
-                	clientSocket = serverSocket.accept();
-                    dis = new DataInputStream(clientSocket.getInputStream());
+                try (Socket clientSocket = serverSocket.accept();
+                	 DataInputStream dis = new DataInputStream(clientSocket.getInputStream())) {
                     
                     String command = dis.readUTF();
                     if (command.equals("UPLOAD")) {
                     	insertFile(dis);
                     } else if (command.equals("DELETE")) {
                         deleteFile(dis.readUTF());
-                    }
+                    } else if (command.equals("CREATE_DIR")) {
+                    	createDir(dis.readUTF());
+                    }                    
                 } catch (Exception e) {
                     e.printStackTrace();
-                } finally {
-                	try {
-                		if (clientSocket != null) clientSocket.close();
-                		if (dis != null) dis.close();
-                	} catch (Exception e) {
-                        e.printStackTrace();                		
-                	}
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-        	try {
-        		if (serverSocket != null) serverSocket.close();
-        	} catch (Exception e) {
-                e.printStackTrace();
-        	}
         }
     }
 
-    private static void insertFile(DataInputStream dis) throws Exception { // update file
-        String fileName = dis.readUTF();
+    private static void insertFile(DataInputStream dis) throws Exception {
+        String path = dis.readUTF();
         long fileSize = dis.readLong();
-        File file = new File(Config.SERVER_DIR, fileName);
+        File file = new File(SERVER_DIR, path);
         
-        FileOutputStream fos = null;
+        file.getParentFile().mkdirs();
         
-        try {
-        	fos = new FileOutputStream(file);
-        	
+        try (FileOutputStream fos = new FileOutputStream(file)) {
             byte[] buf = new byte[1024];
             int nRead;
             
@@ -74,25 +50,31 @@ public class Server {
                 fos.write(buf, 0, nRead);
                 fileSize -= nRead;
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-        	try {
-        		if (fos != null) fos.close();
-        	} catch (Exception e) {
-                e.printStackTrace();        		
-        	}
         }
         
-        System.out.println("Inserted: " + fileName);
+        System.out.println("Inserted: " + path);
     }
 
-    private static void deleteFile(String fileName) {	// remove file
-        File file = new File(Config.SERVER_DIR, fileName);
-        if (file.exists() && file.delete()) {
-            System.out.println("Deleted: " + fileName);
+    private static void deleteFile(String path) {
+        File file = new File(SERVER_DIR, path);
+        
+        if (!file.exists()) {
+        	System.out.println("Failed to delete: " + path);
         } else {
-            System.out.println("Failed to delete: " + fileName);
+        	if (file.delete())
+        		System.out.println("Deleted: " + path);
+        	else
+        		System.out.println("Failed to delete: " + path);
+        }
+    }
+    
+    private static void createDir(String path) throws Exception {
+        File dir = new File(SERVER_DIR, path);
+
+        if (!dir.exists() && dir.mkdirs()) {
+            System.out.println("Created: " + path);
+        } else {
+            System.out.println("Failed to create: " + path);
         }
     }
 }

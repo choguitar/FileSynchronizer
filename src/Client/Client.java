@@ -1,142 +1,36 @@
 package Client;
 
-import java.io.*;
-import java.net.*;
-import java.nio.file.*;
-import java.security.*;
-import java.util.*;
-
-
-class Config {
-    static final String CLIENT_DIR = "_client_dir";
-    static final String SERVER_DIR = "_server_dir";
-    static final int SERVER_PORT = 8000;
-}
-
-class FileObserver {
-    private final Path dir;
-    private final Map<String, String> fileHashes = new HashMap<>();
-	private final FileHandler fileHandler;
-
-    public FileObserver(String dir, FileHandler handler) {
-        this.dir = Paths.get(dir);
-        this.fileHandler = handler;
-        initHash();
-    }
-
-    private void initHash() {	// current directory information
-    	DirectoryStream<Path> stream = null;
-    	
-        try {
-        	stream = Files.newDirectoryStream(dir);
-        	
-            for (Path file : stream) {
-                if (Files.isRegularFile(file)) {
-                    fileHashes.put(file.toString(), checkHash(file));
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-        	try {
-        		if (stream != null) stream.close();
-        	} catch (Exception e) {
-                e.printStackTrace();
-        	}
-        }
-    }
-
-    public void observe() {	// observe files and synchronize with server
-    	WatchService watchService = null;
-    	
-        try {
-        	watchService = FileSystems.getDefault().newWatchService();
-        			
-            dir.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
-                         StandardWatchEventKinds.ENTRY_MODIFY,
-                         StandardWatchEventKinds.ENTRY_DELETE);
-            
-            while (true) {
-                WatchKey key = watchService.take();
-                for (WatchEvent<?> event : key.pollEvents()) {
-                    Path filePath = dir.resolve((Path) event.context());
-                    handleFileChange(event.kind(), filePath);
-                }
-                key.reset();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-        	try {
-        		if (watchService != null) watchService.close();
-        	} catch (Exception e) {
-                e.printStackTrace();
-        	}
-        }
-    }
-
-    private void handleFileChange(WatchEvent.Kind<?> kind, Path file) {	// handle upload or delete
-        if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
-            fileHashes.remove(file.toString());
-            fileHandler.deleteFile(file.getFileName().toString());
-        } else {
-            try {
-                String hash = checkHash(file);
-                if (!hash.equals(fileHashes.get(file.toString()))) {
-                    fileHashes.put(file.toString(), hash);
-                    fileHandler.insertFile(file.toFile());
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private String checkHash(Path file) throws Exception {	// check file using hash
-    	InputStream fis = null;
-    	
-        try {
-        	fis = Files.newInputStream(file);
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buf = new byte[1024];
-            int nRead;
-            
-            while ((nRead = fis.read(buf)) != -1) {
-                digest.update(buf, 0, nRead);
-            }
-            
-            return Base64.getEncoder().encodeToString(digest.digest());
-        } catch (Exception e) {
-        	throw new Exception(e);
-        } finally {
-        	try {
-        		if (fis != null) fis.close();
-        	} catch (Exception e) {
-                e.printStackTrace();
-        	}
-        }
-    }
-}
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.net.Socket;
+import java.security.MessageDigest;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 class FileHandler {
+    private static final int SERVER_PORT = 8000;
     private final String serverAddr;
 
     public FileHandler(String addr) {
         this.serverAddr = addr;
     }
 
-    public void insertFile(File file) {	// file UPLOAD
-    	Socket socket = null;
-    	FileInputStream fis = null;
-    	DataOutputStream dos = null;
-    	
-        try {
-        	socket = new Socket(serverAddr, Config.SERVER_PORT);
-            fis = new FileInputStream(file);
-            dos = new DataOutputStream(socket.getOutputStream());
-           
+    public void insertFile(File file, String path) {
+        try (Socket socket = new Socket(serverAddr, SERVER_PORT);
+        	 FileInputStream fis = new FileInputStream(file);
+        	 DataOutputStream dos = new DataOutputStream(socket.getOutputStream())){
+        	
             dos.writeUTF("UPLOAD");
-            dos.writeUTF(file.getName());
+            dos.writeUTF(path);
             dos.writeLong(file.length());
             
             byte[] buffer = new byte[1024];
@@ -145,46 +39,121 @@ class FileHandler {
             while ((nRead = fis.read(buffer)) != -1) {
                 dos.write(buffer, 0, nRead);
             }
+            
+            System.out.println("Uploaded: " + path);
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-        	try {
-                if (socket != null) socket.close();
-                if (fis != null) fis.close();
-                if (dos != null) dos.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
     }
     
-    public void deleteFile(String fileName) {	// file DELETE
-    	DataOutputStream dos = null;
-    	Socket socket = null;
-    	
-        try {
-        	socket = new Socket(serverAddr, Config.SERVER_PORT);
-        	dos = new DataOutputStream(socket.getOutputStream());
-            
+    public void deleteFile(String path) {
+        try (Socket socket = new Socket(serverAddr, SERVER_PORT);
+        	 DataOutputStream dos = new DataOutputStream(socket.getOutputStream())) {
+        	
             dos.writeUTF("DELETE");
-            dos.writeUTF(fileName);
+            dos.writeUTF(path);
+
+            System.out.println("Deleted: " + path);
+        } catch (Exception e) {
+        	e.printStackTrace();
+        }
+    }
+    
+    public void createDir(String path) {
+        try (Socket socket = new Socket(serverAddr, SERVER_PORT);
+             DataOutputStream dos = new DataOutputStream(socket.getOutputStream())) {
+
+            dos.writeUTF("CREATE_DIR");
+            dos.writeUTF(path);
+
+            System.out.println("Uploaded: " + path);
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-        	try {
-        		if (dos != null) dos.close();
-        		if (socket != null) socket.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
     }
 }
 
 public class Client {
+	private static final String CLIENT_DIR = "_client_dir";
+	private static final int BACKUP_INTERVAL = 10;
+	
+    private static final Map<String, String> fileHashes = new HashMap<String, String>();
+    private static final Set<String> dirHashes = new HashSet<String>();
+    
     public static void main(String[] args) {
         FileHandler handler = new FileHandler("localhost");
-		FileObserver observer = new FileObserver(Config.CLIENT_DIR, handler);
-        observer.observe();
+        File clientDir = new File(CLIENT_DIR);
+        if (!clientDir.exists()) clientDir.mkdir();
+        
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(() -> backupFiles(handler), 0, BACKUP_INTERVAL, TimeUnit.SECONDS);
+    }
+    
+    private static void backupFiles(FileHandler handler) {
+        File dir = new File(CLIENT_DIR);
+        if (!dir.exists()) return;
+
+        Set<String> curFiles = new HashSet<String>();
+        Set<String> curDirs = new HashSet<String>();
+        rBackupFiles(dir, handler, curFiles, curDirs);
+        
+        Iterator<String> it;
+        it = fileHashes.keySet().iterator();
+        while (it.hasNext()) {
+            String path = it.next();
+            if (!curFiles.contains(path)) {
+                handler.deleteFile(path);
+                it.remove();
+            }
+        }
+        
+        it = dirHashes.iterator();
+        while (it.hasNext()) {
+            String path = it.next();
+            if (!curDirs.contains(path)) {
+                handler.deleteFile(path);
+                it.remove();
+            }
+        }
+    }
+    
+    private static void rBackupFiles(File dir, FileHandler handler, Set<String> curFiles, Set<String> curDirs) {
+    	for (File file : dir.listFiles()) {
+            String path = file.getAbsolutePath().substring(new File(CLIENT_DIR).getAbsolutePath().length() + 1); 
+
+            if (file.isDirectory()) {
+                curDirs.add(path);
+                if (!dirHashes.contains(path)) {
+                    handler.createDir(path);
+                    dirHashes.add(path);
+                }
+            	rBackupFiles(file, handler, curFiles, curDirs);
+            } else {
+            	curFiles.add(path);
+                try {
+                    String hash = fileHash(file);
+                    if (!hash.equals(fileHashes.get(path))) {
+                        fileHashes.put(path, hash);
+                        handler.insertFile(file, path);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private static String fileHash(File file) throws Exception {
+        try (InputStream is = new FileInputStream(file)){
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1024];
+            int nRead;
+            
+            while ((nRead = is.read(buf)) != -1) {
+                digest.update(buf, 0, nRead);
+            }
+            
+            return Base64.getEncoder().encodeToString(digest.digest());
+        }
     }
 }
